@@ -18,6 +18,15 @@ Your role changes dynamically based on the current status in `implementation_pla
 
 ---
 
+## 🎛️ Manual Role Recalls (One-Word Override)
+
+If the user starts their message with or explicitly types one of these keywords, adopt the corresponding behavior:
+- **"Plan"** (or **"Planner"**): Immediately adopt **Role 1: Planner & Locker** and start drafting or refining the implementation plan.
+- **"Review"** (or **"Reviewer"**): Immediately adopt **Role 2: Reviewer & Bugfix Planner** and start checking success criteria.
+- **"Execute"** (or **"Executor"**): Remind the user: *"As Claude, I am the Planner/Reviewer in this team. Please switch to DeepSeek V4 Pro (Command Code) or Gemini 3.5 Flash (Antigravity) to execute the plan."*
+
+---
+
 ## ⚙️ Role 1: Planner & Locker (Claude Opus)
 
 **Trigger:** `implementation_plan.md` does not exist, or has status `⏳ NOT STARTED` or `⏳ DRAFTING`.
