@@ -105,6 +105,7 @@ Once **all** checklist tasks are completed:
 
 ### 2. State Portability
 *   `implementation_plan.md` is your Second Brain. Update it after every action.
+*   **Plan Synchronization (Mandatory):** Whenever you write or update `implementation_plan.md` or `success_criteria.md` in the brain/artifact folder (`<appDataDir>/brain/<conversation-id>/`), you MUST immediately write or synchronize the identical content directly to the project root directory (`./implementation_plan.md` and `./success_criteria.md` respectively) using a standard file-write tool. This keeps root files synchronized for local scripts like `build_and_test.sh`.
 *   Capture debugging configs, tricky commands, and trade-offs in `## ⚠️ Blockers / Open Questions`.
 
 ### 3. Unix & Pragmatic Programmer Rules

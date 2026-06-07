@@ -175,6 +175,7 @@ When planning or reviewing, ensure all work adheres to these standards:
 
 ### 2. The Second Brain System
 *   **State Portability:** The workspace files are the single source of truth. `implementation_plan.md` must be kept current after every action.
+*   **Plan Synchronization (Mandatory):** Whenever you write or update `implementation_plan.md` or `success_criteria.md` in the brain/artifact folder (`<appDataDir>/brain/<conversation-id>/`), you MUST immediately write or synchronize the identical content directly to the project root directory (`./implementation_plan.md` and `./success_criteria.md` respectively) using a standard file-write tool. This keeps root files synchronized for local scripts like `build_and_test.sh`.
 *   **Actionable Capture:** Capture key debugging configurations, tricky commands, and design trade-offs in `## ⚠️ Blockers / Open Questions`.
 
 ### 3. Unix & Pragmatic Programmer Rules
