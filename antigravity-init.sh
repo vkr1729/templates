@@ -32,7 +32,7 @@ echo ""
 
 # ── Validate templates exist ──
 missing=()
-for f in GEMINI.md CLAUDE.md AGENTS.md; do
+for f in GEMINI.md CLAUDE.md AGENTS.md build_and_test.sh REVIEW_PROMPT_TEMPLATE.md; do
     [ ! -f "$TEMPLATE_DIR/$f" ] && missing+=("$f")
 done
 if [ ${#missing[@]} -gt 0 ]; then
@@ -41,7 +41,7 @@ if [ ${#missing[@]} -gt 0 ]; then
 fi
 
 # ── Step 1: Copy rule files ──
-echo -e "${GREEN}[1/3]${NC} Copying tool rules files..."
+echo -e "${GREEN}[1/4]${NC} Copying tool rules files..."
 cp "$TEMPLATE_DIR/GEMINI.md" "$PROJECT_DIR/GEMINI.md"
 cp "$TEMPLATE_DIR/CLAUDE.md" "$PROJECT_DIR/CLAUDE.md"
 cp "$TEMPLATE_DIR/AGENTS.md" "$PROJECT_DIR/AGENTS.md"
@@ -49,9 +49,18 @@ echo "  ✅ GEMINI.md   (Executor rules for Gemini 3.5 Flash)"
 echo "  ✅ CLAUDE.md   (Planner/Reviewer rules for Claude Opus/Sonnet)"
 echo "  ✅ AGENTS.md   (Executor rules for DeepSeek V4 Pro — Command Code)"
 
+# ── Step 1b: Copy automation scripts ──
+echo ""
+echo -e "${GREEN}[2/4]${NC} Copying automation scripts..."
+cp "$TEMPLATE_DIR/build_and_test.sh" "$PROJECT_DIR/build_and_test.sh"
+chmod +x "$PROJECT_DIR/build_and_test.sh"
+cp "$TEMPLATE_DIR/REVIEW_PROMPT_TEMPLATE.md" "$PROJECT_DIR/REVIEW_PROMPT_TEMPLATE.md"
+echo "  ✅ build_and_test.sh           (Automated test → review → fix loop)"
+echo "  ✅ REVIEW_PROMPT_TEMPLATE.md   (Token-efficient Opus review prompt)"
+
 # ── Step 2: Create state files ──
 echo ""
-echo -e "${GREEN}[2/3]${NC} Creating shared state files..."
+echo -e "${GREEN}[3/4]${NC} Creating shared state files..."
 
 if [ -f "$PROJECT_DIR/implementation_plan.md" ]; then
     echo -e "  ${YELLOW}⚠  implementation_plan.md exists — keeping current plan${NC}"
@@ -168,9 +177,9 @@ fi
 
 # ── Step 3: Update .gitignore ──
 echo ""
-echo -e "${GREEN}[3/3]${NC} Checking .gitignore..."
+echo -e "${GREEN}[4/4]${NC} Checking .gitignore..."
 
-IGNORE_ENTRIES=("GEMINI.md" "CLAUDE.md" "AGENTS.md" "implementation_plan.md" "success_criteria.md" "antigravity-init.sh")
+IGNORE_ENTRIES=("GEMINI.md" "CLAUDE.md" "AGENTS.md" "implementation_plan.md" "success_criteria.md" "antigravity-init.sh" "build_and_test.sh" "REVIEW_PROMPT_TEMPLATE.md" "IMPL_CHANGES.diff" "TEST_REPORT.md" ".review_output.md" ".review_prompt_hydrated.md")
 
 if [ -f "$PROJECT_DIR/.gitignore" ]; then
     for entry in "${IGNORE_ENTRIES[@]}"; do
@@ -204,4 +213,9 @@ echo "       • Gemini 3.5 Flash (Antigravity) for medium tasks"
 echo "    3. Switch to Claude Opus/Sonnet to review the execution."
 echo "    4. If bugs found, run the bugfix prompt in the recommended model."
 echo "    5. Manual testing — you control the models from here."
+echo ""
+echo "  Automated Loop (optional):"
+echo "    • Run ./build_and_test.sh to auto-test, auto-review, and auto-fix"
+echo "    • First time? Run ./build_and_test.sh --setup to configure accounts"
+echo "    • Edit TEST_CMD in build_and_test.sh to set your test runner"
 echo ""
