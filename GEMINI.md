@@ -34,7 +34,7 @@ Before doing anything else, read the `## 🐛 Bugfix Plan` section in `implement
 
 ### Execution Protocol:
 
-1. **Read the Plan & Project Skills:** Review `SKILLS.md`, `implementation_plan.md`, and `success_criteria.md` to orient yourself and understand any project-specific architectural guardrails.
+1. **Read the Plan & Project Skills:** Review `SKILLS.md`, `execution_history.md` (if it exists), `implementation_plan.md`, and `success_criteria.md` to orient yourself and understand any project-specific architectural guardrails. **CRITICAL:** Always read `execution_history.md` first to understand the architectural context and previous changes.
 2. **Set status to `💻 EXECUTING`.**
 3. **Execute Sequentially:** Work through the checklist items one by one.
 4. **Quality Gate Per Change (Mandatory).** Before marking any step `[x]`, verify:
@@ -88,10 +88,11 @@ If you sense your quota is depleting (many tool calls, large context, rate limit
 ## ✅ Completion
 
 Once **all** checklist tasks are completed:
-1. Change status in `implementation_plan.md` to `✅ EXECUTION COMPLETE`.
-2. Distill key learnings (gotchas, patterns that worked, mistakes made) into `## 📜 Execution Log`.
-3. Tell the user: *"Execution complete. Please switch to Claude Opus or Sonnet to review."*
-4. **STOP executing.**
+1. **Mandatory Test Verification:** You MUST execute the project's test suite or build verification step (e.g. `npx tsc --noEmit`, `npm test`, or as specified in the project). Do NOT mark as complete if tests fail. You must autonomously debug and fix the failures.
+2. Change status in `implementation_plan.md` to `✅ EXECUTION COMPLETE`.
+3. Distill key learnings (gotchas, patterns that worked, mistakes made) into `## 📜 Execution Log`.
+4. Tell the user: *"Execution complete. Please switch to Claude Opus or Sonnet to review."*
+5. **STOP executing.**
 
 ---
 

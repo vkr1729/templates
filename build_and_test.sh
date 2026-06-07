@@ -19,7 +19,7 @@ set -euo pipefail
 # ══════════════════════════════════════
 # CONFIGURATION — Edit these per project
 # ══════════════════════════════════════
-TEST_CMD="(cd audit-harness && .venv/bin/pytest tests)"
+TEST_CMD="npm test"
 MAX_FIX_ITERATIONS=2
 IMPLEMENTATION_MODEL="cmd"                          # Command Code CLI binary
 DEFAULT_CMD_MODEL="minimax-m3"                      # Default implementation model

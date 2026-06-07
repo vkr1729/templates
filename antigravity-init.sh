@@ -40,8 +40,17 @@ if [ ${#missing[@]} -gt 0 ]; then
     exit 1
 fi
 
+# ── Step 0: Git Initialization ──
+if [ ! -d "$PROJECT_DIR/.git" ]; then
+    echo -e "${GREEN}[0/5]${NC} Initializing git repository..."
+    git init "$PROJECT_DIR"
+    echo "  ✅ git init"
+else
+    echo -e "${GREEN}[0/5]${NC} Git repository already exists."
+fi
+
 # ── Step 1: Copy rule files ──
-echo -e "${GREEN}[1/4]${NC} Copying tool rules files..."
+echo -e "${GREEN}[1/5]${NC} Copying tool rules files..."
 cp "$TEMPLATE_DIR/GEMINI.md" "$PROJECT_DIR/GEMINI.md"
 cp "$TEMPLATE_DIR/CLAUDE.md" "$PROJECT_DIR/CLAUDE.md"
 cp "$TEMPLATE_DIR/AGENTS.md" "$PROJECT_DIR/AGENTS.md"
@@ -51,16 +60,19 @@ echo "  ✅ AGENTS.md   (Executor rules for DeepSeek V4 Pro — Command Code)"
 
 # ── Step 1b: Copy automation scripts ──
 echo ""
-echo -e "${GREEN}[2/4]${NC} Copying automation scripts..."
+echo -e "${GREEN}[2/5]${NC} Copying automation scripts..."
 cp "$TEMPLATE_DIR/build_and_test.sh" "$PROJECT_DIR/build_and_test.sh"
 chmod +x "$PROJECT_DIR/build_and_test.sh"
 cp "$TEMPLATE_DIR/REVIEW_PROMPT_TEMPLATE.md" "$PROJECT_DIR/REVIEW_PROMPT_TEMPLATE.md"
+mkdir -p "$PROJECT_DIR/scripts"
+cp "$TEMPLATE_DIR/scripts/orchestrator.py" "$PROJECT_DIR/scripts/orchestrator.py"
 echo "  ✅ build_and_test.sh           (Automated test → review → fix loop)"
 echo "  ✅ REVIEW_PROMPT_TEMPLATE.md   (Token-efficient Opus review prompt)"
+echo "  ✅ scripts/orchestrator.py     (Plan injection and archiving logic)"
 
 # ── Step 2: Create state files ──
 echo ""
-echo -e "${GREEN}[3/4]${NC} Creating shared state files..."
+echo -e "${GREEN}[3/5]${NC} Creating shared state files..."
 
 if [ -f "$PROJECT_DIR/implementation_plan.md" ]; then
     echo -e "  ${YELLOW}⚠  implementation_plan.md exists — keeping current plan${NC}"
@@ -177,9 +189,9 @@ fi
 
 # ── Step 3: Update .gitignore ──
 echo ""
-echo -e "${GREEN}[4/4]${NC} Checking .gitignore..."
+echo -e "${GREEN}[4/5]${NC} Checking .gitignore..."
 
-IGNORE_ENTRIES=("GEMINI.md" "CLAUDE.md" "AGENTS.md" "implementation_plan.md" "success_criteria.md" "antigravity-init.sh" "build_and_test.sh" "REVIEW_PROMPT_TEMPLATE.md" "IMPL_CHANGES.diff" "TEST_REPORT.md" ".review_output.md" ".review_prompt_hydrated.md")
+IGNORE_ENTRIES=("GEMINI.md" "CLAUDE.md" "AGENTS.md" "implementation_plan.md" "success_criteria.md" "execution_history.md" "antigravity-init.sh" "build_and_test.sh" "REVIEW_PROMPT_TEMPLATE.md" "scripts/orchestrator.py" "IMPL_CHANGES.diff" "TEST_REPORT.md" ".review_output.md" ".review_prompt_hydrated.md")
 
 if [ -f "$PROJECT_DIR/.gitignore" ]; then
     for entry in "${IGNORE_ENTRIES[@]}"; do

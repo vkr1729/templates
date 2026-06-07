@@ -55,65 +55,49 @@ def main():
         # Strip heading if present so we can standardise it
         bugfix_content = re.sub(r'(?i)^###?\s*(?:🐛\s*)?Bugfix Plan\s*\n', '', bugfix_content).strip()
             
-        with open(plan_path, 'r', encoding='utf-8') as f:
-            lines = f.readlines()
+        # Read existing plan
+        try:
+            with open(plan_path, 'r', encoding='utf-8') as f:
+                old_plan = f.read()
+        except FileNotFoundError:
+            old_plan = ""
             
-        in_active_phase = False
-        new_lines = []
-        i = 0
-        in_stale_bugfix = False
-        injected = False
+        # Archive the existing plan to execution_history.md
+        import datetime
+        now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+        history_path = os.path.join(os.path.dirname(plan_path) or ".", "execution_history.md")
         
-        status_regex = re.compile(r'(.*)(🔒\s*LOCKED|💻\s*EXECUTING|🐛\s*BUGFIX PLANNED)(.*)')
-        
-        while i < len(lines):
-            line = lines[i]
+        with open(history_path, 'a', encoding='utf-8') as f:
+            f.write(f"\n\n# [{now_str}] Iteration Archive\n\n")
+            f.write(old_plan)
             
-            if line.startswith("## ") and not "Bugfix Plan" in line and not "🐛" in line:
-                in_active_phase = False
-                in_stale_bugfix = False
-                
-            match = status_regex.search(line)
-            if match and not in_active_phase and not injected:
-                in_active_phase = True
-                line = status_regex.sub(r'\1🐛 BUGFIX PLANNED\3', line)
-                new_lines.append(line)
-                new_lines.append('\n')
-                new_lines.append('## 🐛 Bugfix Plan\n\n')
-                new_lines.append(bugfix_content + '\n\n')
-                injected = True
-                i += 1
-                continue
-                
-            if in_active_phase and ("Bugfix Plan" in line or "🐛" in line) and line.startswith("##"):
-                in_stale_bugfix = True
-                i += 1
-                continue
-                
-            if in_stale_bugfix:
-                if line.startswith("## ") or line.startswith("---"):
-                    in_stale_bugfix = False
-                else:
-                    i += 1
-                    continue
-                    
-            new_lines.append(line)
-            i += 1
-            
-        if not injected:
-            print("Error: Could not find active phase to inject bugfix.", file=sys.stderr)
-            sys.exit(1)
-            
+        # Write new focused plan
+        new_plan = f"""# Implementation Plan
+
+**Status:** 🐛 BUGFIX PLANNED
+
+## 🐛 Bugfix Plan
+
+{bugfix_content}
+
+## 📋 Execution Prompt
+
+Read `AGENTS.md` and `execution_history.md` for context.
+Execute the bugfix plan described above.
+"""
         with open(plan_path, 'w', encoding='utf-8') as f:
-            f.writelines(new_lines)
+            f.write(new_plan)
             
     elif cmd == "mark-bugfix-complete":
         with open(plan_path, 'r', encoding='utf-8') as f:
             content = f.read()
+            
+        if re.search(r'✅\s*EXECUTION COMPLETE', content):
+            sys.exit(0)
         
-        new_content, count = re.subn(r'(🐛\s*BUGFIX PLANNED)', r'✅ EXECUTION COMPLETE', content, count=1)
+        new_content, count = re.subn(r'(🐛\s*BUGFIX PLANNED|💻\s*EXECUTING)', r'✅ EXECUTION COMPLETE', content, count=1)
         if count == 0:
-            print("Error: Could not find BUGFIX PLANNED status to mark complete.", file=sys.stderr)
+            print("Error: Could not find active status to mark complete.", file=sys.stderr)
             sys.exit(1)
             
         with open(plan_path, 'w', encoding='utf-8') as f:
