@@ -8,6 +8,7 @@
 #  Usage:
 #    cd /path/to/your/project
 #    antigravity-init
+#    antigravity-init --update    # Re-copy templates, preserve state files
 # ═══════════════════════════════════════════════════════════════
 
 set -euo pipefail
@@ -15,20 +16,110 @@ set -euo pipefail
 TEMPLATE_DIR="$HOME/.antigravity/templates"
 PROJECT_DIR="$(pwd)"
 PROJECT_NAME="$(basename "$PROJECT_DIR")"
+UPDATE_MODE=false
+TEMPLATE_VERSION="2026-06-13"
 
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 CYAN='\033[0;36m'
 NC='\033[0m'
 
+# Parse arguments
+for arg in "$@"; do
+    case "$arg" in
+        --update) UPDATE_MODE=true ;;
+        --help|-h)
+            echo "Usage: antigravity-init [--update] [--help]"
+            echo ""
+            echo "  (no flag)   Initialize AI orchestration in current directory"
+            echo "  --update    Re-copy rule files and scripts from templates,"
+            echo "              preserving state files (implementation_plan.md, etc.)"
+            echo ""
+            exit 0
+            ;;
+        *)
+            echo "Unknown argument: $arg. Use --help for usage."
+            exit 1
+            ;;
+    esac
+done
+
 echo ""
 echo -e "${CYAN}═══════════════════════════════════════════════════════${NC}"
 echo -e "${CYAN}  antigravity-init — Lean AI Orchestration Setup       ${NC}"
 echo -e "${CYAN}═══════════════════════════════════════════════════════${NC}"
+# Define IGNORE_ENTRIES early (used by both update and init)
+IGNORE_ENTRIES=("GEMINI.md" "CLAUDE.md" "AGENTS.md" "implementation_plan.md" "success_criteria.md" "execution_history.md" "SKILLS.md" "antigravity-init.sh" "build_and_test.sh" "REVIEW_PROMPT_TEMPLATE.md" "scripts/orchestrator.py" "IMPL_CHANGES.diff" "TEST_REPORT.md" ".review_output.md" ".review_prompt_hydrated.md" ".extracted_bugfix.md")
+
 echo ""
 echo -e "  Project:  ${GREEN}${PROJECT_NAME}${NC}"
 echo -e "  Path:     ${PROJECT_DIR}"
 echo ""
+
+# ── Update mode: re-copy rule files, preserve state ──
+if $UPDATE_MODE; then
+    echo -e "${YELLOW}── Update Mode: Re-copying templates, preserving state ──${NC}"
+    echo ""
+
+    # Step 1: Copy rule files
+    echo -e "${GREEN}[1/4]${NC} Updating tool rules files..."
+    cp "$TEMPLATE_DIR/GEMINI.md" "$PROJECT_DIR/GEMINI.md"
+    cp "$TEMPLATE_DIR/CLAUDE.md" "$PROJECT_DIR/CLAUDE.md"
+    cp "$TEMPLATE_DIR/AGENTS.md" "$PROJECT_DIR/AGENTS.md"
+    echo "  ✅ GEMINI.md, CLAUDE.md, AGENTS.md"
+
+    # Step 2: Copy automation scripts
+    echo -e "${GREEN}[2/4]${NC} Updating automation scripts..."
+    cp "$TEMPLATE_DIR/build_and_test.sh" "$PROJECT_DIR/build_and_test.sh"
+    chmod +x "$PROJECT_DIR/build_and_test.sh"
+    cp "$TEMPLATE_DIR/REVIEW_PROMPT_TEMPLATE.md" "$PROJECT_DIR/REVIEW_PROMPT_TEMPLATE.md"
+    mkdir -p "$PROJECT_DIR/scripts"
+    cp "$TEMPLATE_DIR/scripts/orchestrator.py" "$PROJECT_DIR/scripts/orchestrator.py"
+    echo "  ✅ build_and_test.sh, REVIEW_PROMPT_TEMPLATE.md, scripts/orchestrator.py"
+
+    # Step 3: Add template-version comments (use appropriate comment syntax per file type)
+    echo -e "${GREEN}[3/4]${NC} Stamping template version..."
+    for f in GEMINI.md CLAUDE.md AGENTS.md build_and_test.sh REVIEW_PROMPT_TEMPLATE.md scripts/orchestrator.py; do
+        if [ -f "$PROJECT_DIR/$f" ]; then
+            case "$f" in
+                *.md)   echo -e "\n<!-- template-version: ${TEMPLATE_VERSION} -->" >> "$PROJECT_DIR/$f" ;;
+                *.sh)   echo -e "\n# template-version: ${TEMPLATE_VERSION}" >> "$PROJECT_DIR/$f" ;;
+                *.py)   echo -e "\n# template-version: ${TEMPLATE_VERSION}" >> "$PROJECT_DIR/$f" ;;
+            esac
+        fi
+    done
+    echo "  ✅ Version stamped on all copied files"
+
+    # Step 4: Update .gitignore (additive only)
+    echo -e "${GREEN}[4/4]${NC} Updating .gitignore..."
+    if [ -f "$PROJECT_DIR/.gitignore" ]; then
+        for entry in "${IGNORE_ENTRIES[@]}"; do
+            if ! grep -q "^${entry}$" "$PROJECT_DIR/.gitignore" 2>/dev/null; then
+                echo "$entry" >> "$PROJECT_DIR/.gitignore"
+                echo "  ✅ Added $entry to .gitignore"
+            fi
+        done
+    else
+        echo -e "  ${YELLOW}⚠  No .gitignore found — creating one${NC}"
+        {
+            echo "# AI Orchestration state files"
+            for entry in "${IGNORE_ENTRIES[@]}"; do
+                echo "$entry"
+            done
+        } > "$PROJECT_DIR/.gitignore"
+        echo "  ✅ Created .gitignore"
+    fi
+
+    # Done
+    echo ""
+    echo -e "${CYAN}═══════════════════════════════════════════════════════${NC}"
+    echo -e "${GREEN}  ✅ Templates updated!${NC}"
+    echo -e "${CYAN}═══════════════════════════════════════════════════════${NC}"
+    echo ""
+    echo "  State files preserved: implementation_plan.md, success_criteria.md,"
+    echo "  execution_history.md, SKILLS.md"
+    exit 0
+fi
 
 # ── Validate templates exist ──
 missing=()
@@ -187,11 +278,26 @@ CRITERIAEOF
     echo "  ✅ success_criteria.md"
 fi
 
+# ── Step 2b: Create SKILLS.md skeleton ──
+echo ""
+echo -e "${GREEN}[3b/5]${NC} Creating SKILLS.md skeleton..."
+if [ -f "$PROJECT_DIR/SKILLS.md" ]; then
+    echo -e "  ${YELLOW}⚠  SKILLS.md exists — keeping current skills${NC}"
+else
+    cat > "$PROJECT_DIR/SKILLS.md" << 'SKILLSEOF'
+# SKILLS.md — Project-Specific Engineering Constraints
+
+> Claude Opus will populate this file during the first planning session.
+> Executor agents: if this file is empty, proceed without project-specific constraints.
+
+*(No constraints yet — populate during planning.)*
+SKILLSEOF
+    echo "  ✅ SKILLS.md (empty skeleton — populate during planning)"
+fi
+
 # ── Step 3: Update .gitignore ──
 echo ""
 echo -e "${GREEN}[4/5]${NC} Checking .gitignore..."
-
-IGNORE_ENTRIES=("GEMINI.md" "CLAUDE.md" "AGENTS.md" "implementation_plan.md" "success_criteria.md" "execution_history.md" "antigravity-init.sh" "build_and_test.sh" "REVIEW_PROMPT_TEMPLATE.md" "scripts/orchestrator.py" "IMPL_CHANGES.diff" "TEST_REPORT.md" ".review_output.md" ".review_prompt_hydrated.md")
 
 if [ -f "$PROJECT_DIR/.gitignore" ]; then
     for entry in "${IGNORE_ENTRIES[@]}"; do

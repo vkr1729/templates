@@ -68,15 +68,12 @@ if ! declare -F cmd &>/dev/null; then
 fi
 
 # Helper: run agy with the correct env isolation for a given account.
-# Account 1 uses keyring. Account 2 blocks keyring to force file-based token.
+# Both accounts use DBUS_SESSION_BUS_ADDRESS=/nonexistent to block keyring
+# and force file-based token auth (keyring unreliable in headless/sandboxed envs).
 agy_for_account() {
     local acct_dir="$1"
     shift
-    if [ "$acct_dir" = "$AGY_ACCOUNT_2" ]; then
-        DBUS_SESSION_BUS_ADDRESS=/nonexistent HOME="$acct_dir" agy "$@"
-    else
-        DBUS_SESSION_BUS_ADDRESS=/nonexistent HOME="$acct_dir" agy "$@"
-    fi
+    DBUS_SESSION_BUS_ADDRESS=/nonexistent HOME="$acct_dir" agy "$@"
 }
 
 # ══════════════════════════════════════
@@ -90,6 +87,7 @@ IMPL_PLAN="$PROJECT_DIR/implementation_plan.md"
 DRY_RUN=false
 SETUP_MODE=false
 CAPTURE_ONLY=false
+ONLY_REVIEW=false
 CHOSEN_ROUTE=""
 CHOSEN_ROUTE_LABEL=""
 
@@ -142,6 +140,13 @@ die() {
     exit "${2:-1}"
 }
 
+cleanup() {
+    rm -f "$PROJECT_DIR/.review_output.md" \
+          "$PROJECT_DIR/.review_prompt_hydrated.md" \
+          "$PROJECT_DIR/.extracted_bugfix.md" \
+          "/tmp/agy_prompt_$$"
+}
+
 print_usage() {
     return 0
 }
@@ -152,15 +157,18 @@ print_usage() {
 
 for arg in "$@"; do
     case "$arg" in
-        --dry-run)  DRY_RUN=true ;;
-        --setup)    SETUP_MODE=true ;;
-        --capture)  CAPTURE_ONLY=true ;;
+        --dry-run)      DRY_RUN=true ;;
+        --setup)        SETUP_MODE=true ;;
+        --capture)      CAPTURE_ONLY=true ;;
+        --only-review)  ONLY_REVIEW=true ;;
         --help|-h)
-            echo "Usage: ./build_and_test.sh [--dry-run] [--setup] [--capture]"
+            echo "Usage: ./build_and_test.sh [--dry-run] [--setup] [--capture] [--only-review]"
             echo ""
-            echo "  --dry-run   Preview all phases without making API calls"
-            echo "  --setup     One-time setup: install agy CLI and authenticate accounts"
-            echo "  --capture   Only capture diff + test report, then exit"
+            echo "  --dry-run      Preview all phases without making API calls"
+            echo "  --setup        One-time setup: install agy CLI and authenticate accounts"
+            echo "  --capture      Only capture diff + test report, then exit"
+            echo "  --only-review  Skip initial implementation and fix execution;"
+            echo "                 run capture → estimate → route → review → check-no-bugs"
             echo ""
             exit 0
             ;;
@@ -246,15 +254,36 @@ run_setup() {
         log_success "agy CLI already installed ($(agy --version 2>/dev/null || echo 'unknown version'))"
     fi
 
+    # Step 1b: Install headroom-ai
+    log_step "Installing headroom-ai library..."
+    if $DRY_RUN; then
+        log_dim "[DRY RUN] Would install headroom-ai"
+    else
+        if command -v uv &>/dev/null; then
+            if python3 -c "import sys; sys.exit(0 if sys.prefix != sys.base_prefix else 1)" &>/dev/null; then
+                PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1 uv pip install headroom-ai
+            else
+                PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1 uv pip install --system headroom-ai
+            fi
+        else
+            local break_flag=""
+            if python3 -m pip install --help 2>&1 | grep -q "break-system-packages"; then
+                break_flag="--break-system-packages"
+            fi
+            PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1 python3 -m pip install --user $break_flag headroom-ai
+        fi
+        log_success "headroom-ai library installed"
+    fi
+
     # Step 2: Authenticate Account 1
     if ! agy_for_account "$AGY_ACCOUNT_1" -p "reply with OK" --print-timeout 15s &>/dev/null 2>&1; then
         log_step "Authenticating Account 1 (Gemini AI Pro)..."
         echo -e "\n  ${BOLD}Please log in with your FIRST Google AI Pro account:${NC}" >&2
-        echo -e "  ${DIM}Running: HOME=$AGY_ACCOUNT_1 agy${NC}" >&2
+        echo -e "  ${DIM}Running: DBUS_SESSION_BUS_ADDRESS=/nonexistent HOME=$AGY_ACCOUNT_1 agy${NC}" >&2
         echo -e "  ${DIM}After login, type /quit to exit.${NC}" >&2
         mkdir -p "$AGY_ACCOUNT_1"
         if $DRY_RUN; then
-            log_dim "[DRY RUN] Would launch: HOME=$AGY_ACCOUNT_1 agy"
+            log_dim "[DRY RUN] Would launch: DBUS_SESSION_BUS_ADDRESS=/nonexistent HOME=$AGY_ACCOUNT_1 agy"
         else
             DBUS_SESSION_BUS_ADDRESS=/nonexistent HOME="$AGY_ACCOUNT_1" agy
             log_success "Account 1 authenticated"
@@ -269,12 +298,12 @@ run_setup() {
     if ! agy_for_account "$AGY_ACCOUNT_2" -p "reply with OK" --print-timeout 15s &>/dev/null 2>&1; then
         log_step "Authenticating Account 2 (Gemini AI Pro)..."
         echo -e "\n  ${BOLD}Please log in with your SECOND Google AI Pro account:${NC}" >&2
-        echo -e "  ${DIM}Running: DISPLAY= HOME=$AGY_ACCOUNT_2 agy${NC}" >&2
+        echo -e "  ${DIM}Running: DISPLAY= DBUS_SESSION_BUS_ADDRESS=/nonexistent HOME=$AGY_ACCOUNT_2 agy${NC}" >&2
         echo -e "  ${DIM}(Uses headless auth — copy the URL to an incognito browser)${NC}" >&2
         echo -e "  ${DIM}After login, type /quit to exit.${NC}" >&2
         mkdir -p "$AGY_ACCOUNT_2"
         if $DRY_RUN; then
-            log_dim "[DRY RUN] Would launch: DISPLAY= HOME=$AGY_ACCOUNT_2 agy"
+            log_dim "[DRY RUN] Would launch: DISPLAY= DBUS_SESSION_BUS_ADDRESS=/nonexistent HOME=$AGY_ACCOUNT_2 agy"
         else
             DISPLAY= DBUS_SESSION_BUS_ADDRESS=/nonexistent HOME="$AGY_ACCOUNT_2" agy
             log_success "Account 2 authenticated"
@@ -315,7 +344,8 @@ capture_changes() {
     fi
 
     if [ ! -s "$DIFF_FILE" ]; then
-        die "No changes detected (staged or unstaged). Nothing to review." 1
+        log_success "No changes detected — nothing to review"
+        exit 0
     fi
 
     local diff_lines
@@ -355,7 +385,7 @@ capture_changes() {
     fi
 
     log_warn "Tests failed (exit code ${test_exit_code}) → TEST_REPORT.md"
-    return 0
+    return 1
 }
 
 # ══════════════════════════════════════
@@ -406,7 +436,7 @@ check_agy_account() {
 
     log_step "Checking ${label} (${config_dir})..."
 
-    # Auth tokens are in system keyring (acct1) or file (acct2) — probe with a lightweight call
+    # Both accounts use file-based tokens (DBUS blocked) — probe with a lightweight call
     if ! agy_for_account "$config_dir" -p "reply with OK" --print-timeout 10s &>/dev/null 2>&1; then
         log_dim "${label}: Not authenticated — skipping"
         return 1
@@ -501,18 +531,32 @@ route_review() {
 build_review_prompt() {
     local prompt_file="$PROJECT_DIR/.review_prompt_hydrated.md"
 
-    # Read template and substitute placeholders
-    local diff_content test_content
-    diff_content=$(cat "$DIFF_FILE")
-    test_content=$(cat "$TEST_REPORT")
+    # Compress changes if headroom is available
+    local compress_model="claude-opus"
+    local diff_content test_content headroom_note
+    if python3 scripts/orchestrator.py has-headroom &>/dev/null; then
+        log_step "Compressing diff using Headroom (model: ${compress_model})..."
+        diff_content=$(python3 scripts/orchestrator.py compress "$DIFF_FILE" diff "$compress_model")
+        log_step "Compressing test report using Headroom (model: ${compress_model})..."
+        test_content=$(python3 scripts/orchestrator.py compress "$TEST_REPORT" log "$compress_model")
+        headroom_note="> [!NOTE]
+> The DIFF and TEST REPORT sections below may be compressed via Headroom to optimize token usage. If you need details that were omitted (such as full function bodies or complete stack traces), you can ask the user to provide them from \`IMPL_CHANGES.diff\` or \`TEST_REPORT.md\` in the project root directory."
+    else
+        log_dim "Headroom not available. Using raw uncompressed context."
+        diff_content=$(cat "$DIFF_FILE")
+        test_content=$(cat "$TEST_REPORT")
+        headroom_note=""
+    fi
 
     # Use awk for reliable multi-line substitution (sed chokes on large diffs)
-    awk -v diff="$diff_content" -v tests="$test_content" '
+    awk -v diff="$diff_content" -v tests="$test_content" -v headroom="$headroom_note" '
     {
         if ($0 == "{{IMPL_CHANGES_DIFF}}") {
             print diff
         } else if ($0 == "{{TEST_REPORT}}") {
             print tests
+        } else if ($0 == "{{HEADROOM_NOTE}}") {
+            print headroom
         } else {
             print $0
         }
@@ -535,14 +579,22 @@ execute_review_via_agy() {
     local agy_exit=0
 
     # Use script(1) as TTY wrapper to work around agy -p non-TTY output issues
-    # Run from /tmp to escape the workspace directory context and AGENTS.md rules
+    # Run from /tmp to escape the workspace directory context and AGENTS.md rules.
+    # NOTE: agy CLI has no --no-read / --no-workspace flag. The cd /tmp + HOME
+    # override is the only way to prevent workspace files from being loaded into context.
     local tmp_prompt="/tmp/agy_prompt_$$"
-    echo "$prompt_content" | head -c 50000 > "$tmp_prompt"
+    echo "$prompt_content" > "$tmp_prompt"
+
+    local prompt_chars
+    prompt_chars=$(wc -c < "$tmp_prompt")
+    if [ "$prompt_chars" -gt 100000 ]; then
+        log_warn "Large prompt (${prompt_chars} chars) — consider enabling headroom"
+    fi
 
     if command -v script &>/dev/null; then
-        (cd /tmp && DBUS_SESSION_BUS_ADDRESS=/nonexistent HOME="$config_dir" script -qc "agy --model \"${AGY_OPUS_MODEL}\" -p \"\$(cat $tmp_prompt)\" --dangerously-skip-permissions 2>&1" /dev/null > "$output_file") || agy_exit=$?
+        (cd /tmp && DBUS_SESSION_BUS_ADDRESS=/nonexistent HOME="$config_dir" script -qc "agy --model \"${AGY_OPUS_MODEL}\" -p \"\$(cat $tmp_prompt)\" --print-timeout 300s --dangerously-skip-permissions 2>&1" /dev/null > "$output_file") || agy_exit=$?
     else
-        (cd /tmp && agy_for_account "$config_dir" --model "${AGY_OPUS_MODEL}" -p "$(cat "$tmp_prompt")" --dangerously-skip-permissions > "$output_file" 2>&1) || agy_exit=$?
+        (cd /tmp && agy_for_account "$config_dir" --model "${AGY_OPUS_MODEL}" -p "$(cat "$tmp_prompt")" --print-timeout 300s --dangerously-skip-permissions > "$output_file" 2>&1) || agy_exit=$?
     fi
     rm -f "$tmp_prompt"
 
@@ -774,6 +826,8 @@ execute_initial_plan() {
 # ══════════════════════════════════════
 
 main() {
+    trap cleanup EXIT
+
     echo -e "\n${BOLD}${CYAN}╔═══════════════════════════════════════════════════════╗${NC}" >&2
     echo -e "${BOLD}${CYAN}║     build_and_test.sh — Automated Review Loop        ║${NC}" >&2
     echo -e "${BOLD}${CYAN}╚═══════════════════════════════════════════════════════╝${NC}" >&2
@@ -800,8 +854,12 @@ main() {
         log_dim "Run ./build_and_test.sh --setup to enable free Opus quota routing"
     fi
 
-    # Phase 0: Initial Implementation
-    execute_initial_plan
+    # Phase 0: Initial Implementation (skip if --only-review)
+    if $ONLY_REVIEW; then
+        log_dim "--only-review: skipping Phase 0 (initial implementation)"
+    else
+        execute_initial_plan
+    fi
 
     local iteration=0
 
@@ -814,8 +872,9 @@ main() {
         fi
 
         # Phase 1: Capture
-        capture_changes
-        # Note: capture_changes exits 0 if tests pass
+        local test_result=0
+        capture_changes || test_result=$?
+        # test_result: 0 = tests pass, 1 = tests fail, exit = no changes found
 
         if $CAPTURE_ONLY; then
             log_success "Capture complete. Files written:"
@@ -833,8 +892,34 @@ main() {
         # Phase 4: Review
         run_review
 
+        # Check if review found any bugs
+        if python3 scripts/orchestrator.py check-no-bugs "$PROJECT_DIR/.review_output.md"; then
+            log_warn "Review found bugs — injecting bugfix plan..."
+        else
+            log_success "Clean review — no bugs found!"
+            python3 scripts/orchestrator.py mark-bugfix-complete
+            # Clean up temp files
+            rm -f "$PROJECT_DIR/.review_output.md" "$PROJECT_DIR/.review_prompt_hydrated.md"
+            rm -f "$DIFF_FILE" "$TEST_REPORT"
+            echo "" >&2
+            echo -e "${BOLD}${GREEN}╔═══════════════════════════════════════════════════════╗${NC}" >&2
+            echo -e "${BOLD}${GREEN}║     ✅  CLEAN REVIEW — No Bugs Found                 ║${NC}" >&2
+            echo -e "${BOLD}${GREEN}╠═══════════════════════════════════════════════════════╣${NC}" >&2
+            echo -e "${BOLD}${GREEN}║  Route used:  ${CHOSEN_ROUTE_LABEL}${NC}" >&2
+            echo -e "${BOLD}${GREEN}║  Iterations:  ${iteration}/${MAX_FIX_ITERATIONS}${NC}" >&2
+            echo -e "${BOLD}${GREEN}╚═══════════════════════════════════════════════════════╝${NC}" >&2
+            print_usage
+            exit 0
+        fi
+
         # Phase 4b: Inject
         inject_bugfix_plan
+
+        # --only-review: exit after review, don't execute fix
+        if $ONLY_REVIEW; then
+            log_success "--only-review complete. Review output saved in implementation_plan.md."
+            exit 0
+        fi
 
         # Phase 5: Execute Fix
         execute_fix
