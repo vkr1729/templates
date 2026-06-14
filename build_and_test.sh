@@ -21,8 +21,18 @@ set -euo pipefail
 # ══════════════════════════════════════
 TEST_CMD="npm test"
 MAX_FIX_ITERATIONS=2
-IMPLEMENTATION_MODEL="cmd"                          # Command Code CLI binary
-DEFAULT_CMD_MODEL="minimax-m3"                      # Default implementation model
+DEFAULT_AGY_MODEL="Gemini 3.1 Pro (High)"
+DEFAULT_CMD_MODEL="minimax-m3"
+DEFAULT_KIMCHI_MODEL="kimi-k2.6"
+DEFAULT_CLAUDE_IMPL_MODEL="us.anthropic.claude-opus-4-6-v1"
+IMPL_CLI="cmd"
+IMPL_MODEL=""
+DEFAULT_REVIEW_AGY="Claude Opus 4.6 (Thinking)"
+DEFAULT_REVIEW_CMD="minimax-m3"
+DEFAULT_REVIEW_KIMCHI="kimi-k2.6"
+DEFAULT_REVIEW_CLAUDE="us.anthropic.claude-opus-4-6-v1"
+REVIEW_CLI=""
+REVIEW_MODEL=""
 CLAUDE_MODEL="us.anthropic.claude-opus-4-6-v1"             # Bedrock fallback model
 BEDROCK_MODEL="${CLAUDE_MODEL}"
 AGY_OPUS_MODEL="Claude Opus 4.6 (Thinking)"        # agy model string for Opus
@@ -155,15 +165,23 @@ print_usage() {
 # PARSE ARGUMENTS
 # ══════════════════════════════════════
 
-for arg in "$@"; do
-    case "$arg" in
-        --dry-run)      DRY_RUN=true ;;
-        --setup)        SETUP_MODE=true ;;
-        --capture)      CAPTURE_ONLY=true ;;
-        --only-review)  ONLY_REVIEW=true ;;
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --dry-run)      DRY_RUN=true; shift ;;
+        --setup)        SETUP_MODE=true; shift ;;
+        --capture)      CAPTURE_ONLY=true; shift ;;
+        --only-review)  ONLY_REVIEW=true; shift ;;
+        --impl-cli)     IMPL_CLI="$2"; shift 2 ;;
+        --model)        IMPL_MODEL="$2"; shift 2 ;;
+        --review-cli)   REVIEW_CLI="$2"; shift 2 ;;
+        --review-model) REVIEW_MODEL="$2"; shift 2 ;;
         --help|-h)
-            echo "Usage: ./build_and_test.sh [--dry-run] [--setup] [--capture] [--only-review]"
+            echo "Usage: ./build_and_test.sh [--dry-run] [--setup] [--capture] [--only-review] [--impl-cli <cli>] [--model <model>] [--review-cli <cli>] [--review-model <model>]"
             echo ""
+            echo "  --impl-cli     Implementation CLI to use (cmd, agy, kimchi, claude). Default: cmd"
+            echo "  --model        Model to use for implementation. Defaults mapped per CLI."
+            echo "  --review-cli   Review CLI to bypass waterfall routing (cmd, agy, kimchi, claude)."
+            echo "  --review-model Model to use for custom review."
             echo "  --dry-run      Preview all phases without making API calls"
             echo "  --setup        One-time setup: install agy CLI and authenticate accounts"
             echo "  --capture      Only capture diff + test report, then exit"
@@ -173,10 +191,31 @@ for arg in "$@"; do
             exit 0
             ;;
         *)
-            die "Unknown argument: $arg. Use --help for usage." 1
+            die "Unknown argument: $1. Use --help for usage." 1
             ;;
     esac
 done
+
+# Resolve default model if not provided
+if [ -z "$IMPL_MODEL" ]; then
+    case "$IMPL_CLI" in
+        agy)    IMPL_MODEL="$DEFAULT_AGY_MODEL" ;;
+        cmd)    IMPL_MODEL="$DEFAULT_CMD_MODEL" ;;
+        kimchi) IMPL_MODEL="$DEFAULT_KIMCHI_MODEL" ;;
+        claude) IMPL_MODEL="$DEFAULT_CLAUDE_IMPL_MODEL" ;;
+        *)      IMPL_MODEL="$DEFAULT_CMD_MODEL" ;;
+    esac
+fi
+
+if [ -n "$REVIEW_CLI" ] && [ -z "$REVIEW_MODEL" ]; then
+    case "$REVIEW_CLI" in
+        agy)    REVIEW_MODEL="$DEFAULT_REVIEW_AGY" ;;
+        cmd)    REVIEW_MODEL="$DEFAULT_REVIEW_CMD" ;;
+        kimchi) REVIEW_MODEL="$DEFAULT_REVIEW_KIMCHI" ;;
+        claude) REVIEW_MODEL="$DEFAULT_REVIEW_CLAUDE" ;;
+        *)      REVIEW_MODEL="$DEFAULT_REVIEW_CMD" ;;
+    esac
+fi
 
 # ══════════════════════════════════════
 # PREFLIGHT CHECKS
@@ -206,8 +245,8 @@ preflight_check_tools() {
     if ! command -v git &>/dev/null; then
         missing+=("git")
     fi
-    if ! command -v "$IMPLEMENTATION_MODEL" &>/dev/null; then
-        missing+=("$IMPLEMENTATION_MODEL (Command Code)")
+    if ! command -v "$IMPL_CLI" &>/dev/null; then
+        missing+=("$IMPL_CLI (Implementation CLI)")
     fi
 
     if [ ${#missing[@]} -gt 0 ]; then
@@ -327,11 +366,11 @@ run_setup() {
 }
 
 # ══════════════════════════════════════
-# PHASE 1: CAPTURE CHANGES & TEST
+# PHASE 2: CAPTURE CHANGES & TEST
 # ══════════════════════════════════════
 
 capture_changes() {
-    log_phase "Phase 1: Capture Changes & Run Tests"
+    log_phase "Phase 2: Capture Changes & Run Tests"
 
     # 1a. Capture staged diff
     log_step "Capturing staged changes (git diff --cached)..."
@@ -389,11 +428,11 @@ capture_changes() {
 }
 
 # ══════════════════════════════════════
-# PHASE 2: ESTIMATE TOKEN WEIGHT
+# PHASE 3: ESTIMATE TOKEN WEIGHT
 # ══════════════════════════════════════
 
 estimate_tokens() {
-    log_phase "Phase 2: Estimate Token Weight"
+    log_phase "Phase 3: Estimate Token Weight"
 
     local diff_chars test_chars template_chars total_chars
     local estimated_tokens overhead required_tokens
@@ -424,7 +463,7 @@ estimate_tokens() {
 }
 
 # ══════════════════════════════════════
-# PHASE 3: DUAL-ACCOUNT WATERFALL ROUTER
+# PHASE 4: DUAL-ACCOUNT WATERFALL ROUTER
 # ══════════════════════════════════════
 
 # Check if a specific agy account has enough quota.
@@ -489,7 +528,17 @@ check_agy_account() {
 }
 
 route_review() {
-    log_phase "Phase 3: Route Review (Waterfall)"
+    log_phase "Phase 4: Route Review"
+
+    if [ -n "$REVIEW_CLI" ]; then
+        log_step "Custom review routing requested via --review-cli"
+        CHOSEN_ROUTE="custom"
+        CHOSEN_ROUTE_LABEL="Custom CLI: $REVIEW_CLI"
+        log_route "Routed to: ${BOLD}${CHOSEN_ROUTE_LABEL}${NC}"
+        return 0
+    fi
+
+    log_step "Using Waterfall Routing..."
 
     # Tier 1: Gemini AI Pro Account 1 (free Opus quota)
     if command -v agy &>/dev/null; then
@@ -525,7 +574,7 @@ route_review() {
 }
 
 # ══════════════════════════════════════
-# PHASE 4: EXECUTE REVIEW
+# PHASE 5: EXECUTE REVIEW
 # ══════════════════════════════════════
 
 build_review_prompt() {
@@ -616,6 +665,44 @@ execute_review_via_agy() {
     return 0
 }
 
+execute_custom_review() {
+    local prompt_file="$1"
+    local output_file="$PROJECT_DIR/.review_output.md"
+    local review_exit=0
+
+    log_step "Sending review via custom CLI: $REVIEW_CLI (model: $REVIEW_MODEL)..."
+
+    if [ "$REVIEW_CLI" = "agy" ]; then
+        local tmp_prompt="/tmp/agy_prompt_$$"
+        cat "$prompt_file" > "$tmp_prompt"
+        if command -v script &>/dev/null; then
+            (cd /tmp && DBUS_SESSION_BUS_ADDRESS=/nonexistent script -qc "agy --model \"$REVIEW_MODEL\" -p \"\$(cat $tmp_prompt)\" --print-timeout 300s --dangerously-skip-permissions 2>&1" /dev/null > "$output_file") || review_exit=$?
+        else
+            (cd /tmp && agy --model "$REVIEW_MODEL" -p "$(cat "$tmp_prompt")" --print-timeout 300s --dangerously-skip-permissions > "$output_file" 2>&1) || review_exit=$?
+        fi
+        rm -f "$tmp_prompt"
+    elif [ "$REVIEW_CLI" = "claude" ]; then
+        claude --model "$REVIEW_MODEL" -p "$(cat "$prompt_file")" --max-turns 1 --output-format text > "$output_file" 2>&1 || review_exit=$?
+    else
+        $REVIEW_CLI --model "$REVIEW_MODEL" -p "$(cat "$prompt_file")" > "$output_file" 2>&1 || review_exit=$?
+    fi
+
+    if [ "$review_exit" -ne 0 ]; then
+        log_warn "$REVIEW_CLI call failed (exit code: $review_exit)"
+        rm -f "$output_file"
+        return 1
+    fi
+
+    if [ ! -s "$output_file" ] || [ "$(wc -c < "$output_file")" -lt 50 ]; then
+        log_warn "$REVIEW_CLI returned empty or too-short response"
+        rm -f "$output_file"
+        return 1
+    fi
+
+    log_success "Review received ($(wc -c < "$output_file") chars)"
+    return 0
+}
+
 execute_review_via_bedrock() {
     local prompt_file="$1"
     local output_file="$PROJECT_DIR/.review_output.md"
@@ -644,7 +731,7 @@ execute_review_via_bedrock() {
 }
 
 run_review() {
-    log_phase "Phase 4: Execute Code Review"
+    log_phase "Phase 5: Execute Code Review"
 
     local prompt_file
     prompt_file=$(build_review_prompt)
@@ -672,6 +759,11 @@ MOCKEOF
     local review_success=false
 
     case "$CHOSEN_ROUTE" in
+        custom)
+            if execute_custom_review "$prompt_file"; then
+                review_success=true
+            fi
+            ;;
         agy_1)
             if execute_review_via_agy "$AGY_ACCOUNT_1" "$prompt_file"; then
                 review_success=true
@@ -715,7 +807,9 @@ MOCKEOF
     fi
 
     local model_used=""
-    if [ "$CHOSEN_ROUTE" = "bedrock" ] || [[ "$CHOSEN_ROUTE_LABEL" == *"Bedrock"* ]]; then
+    if [ "$CHOSEN_ROUTE" = "custom" ]; then
+        model_used="${REVIEW_MODEL}"
+    elif [ "$CHOSEN_ROUTE" = "bedrock" ] || [[ "$CHOSEN_ROUTE_LABEL" == *"Bedrock"* ]]; then
         model_used="${BEDROCK_MODEL}"
     else
         model_used="${AGY_OPUS_MODEL}"
@@ -725,7 +819,7 @@ MOCKEOF
 }
 
 # ══════════════════════════════════════
-# PHASE 4b: INJECT BUGFIX PLAN
+# PHASE 5b: INJECT BUGFIX PLAN
 # ══════════════════════════════════════
 
 inject_bugfix_plan() {
@@ -755,41 +849,65 @@ inject_bugfix_plan() {
     rm -f "$review_output" "$PROJECT_DIR/.review_prompt_hydrated.md" "$extracted_bugfix"
 }
 
+run_executor() {
+    local max_turns="$1"
+    local cmd_exit=0
+    
+    if [ "$IMPL_CLI" = "agy" ]; then
+        if $DRY_RUN; then
+            log_dim "[DRY RUN] Would execute: agy --model \"$IMPL_MODEL\" -p \"Execute\" --dangerously-skip-permissions --print-timeout 30m"
+            return 0
+        fi
+        log_dim "Running: agy --model \"$IMPL_MODEL\" -p \"Execute\" --dangerously-skip-permissions --print-timeout 30m"
+        agy --model "$IMPL_MODEL" -p "Execute" --dangerously-skip-permissions --print-timeout 30m || cmd_exit=$?
+    elif [ "$IMPL_CLI" = "claude" ]; then
+        if $DRY_RUN; then
+            log_dim "[DRY RUN] Would execute: claude --model \"$IMPL_MODEL\" -p \"Execute\" --permission-mode bypassPermissions"
+            return 0
+        fi
+        log_dim "Running: claude --model \"$IMPL_MODEL\" -p \"Execute\" --permission-mode bypassPermissions"
+        claude --model "$IMPL_MODEL" -p "Execute" --permission-mode bypassPermissions || cmd_exit=$?
+    else
+        if $DRY_RUN; then
+            log_dim "[DRY RUN] Would execute: $IMPL_CLI --model \"$IMPL_MODEL\" -p \"Execute\" --yolo --max-turns $max_turns"
+            return 0
+        fi
+        log_dim "Running: $IMPL_CLI --model \"$IMPL_MODEL\" -p \"Execute\" --yolo --max-turns $max_turns"
+        $IMPL_CLI --model "$IMPL_MODEL" -p "Execute" --yolo --max-turns "$max_turns" || cmd_exit=$?
+    fi
+    
+    return $cmd_exit
+}
+
 # ══════════════════════════════════════
-# PHASE 5: EXECUTE FIX (Command Code)
+# PHASE 6: EXECUTE FIX
 # ══════════════════════════════════════
 
 execute_fix() {
-    log_phase "Phase 5: Execute Bugfix (Command Code)"
+    log_phase "Phase 6: Execute Bugfix ($IMPL_CLI)"
 
-    if $DRY_RUN; then
-        log_dim "[DRY RUN] Would execute: ${IMPLEMENTATION_MODEL} -p \"Execute\" --yolo --max-turns 80"
-        return 0
-    fi
-
-    log_step "Handing off to Command Code for autonomous bugfix..."
-    log_dim "Running: ${IMPLEMENTATION_MODEL} -p \"Execute\" --yolo --max-turns 80"
+    log_step "Handing off to $IMPL_CLI for autonomous bugfix..."
 
     local cmd_exit=0
-    $IMPLEMENTATION_MODEL -p "Execute" --yolo --max-turns 80 || cmd_exit=$?
+    run_executor 80 || cmd_exit=$?
 
     if [ "$cmd_exit" -eq 8 ]; then
-        log_warn "Command Code hit max turns limit (80). Bugfix may be incomplete."
+        log_warn "$IMPL_CLI hit max turns limit (80). Bugfix may be incomplete."
     elif [ "$cmd_exit" -ne 0 ]; then
-        log_error "Command Code exited with code ${cmd_exit}"
+        log_error "$IMPL_CLI exited with code ${cmd_exit}"
         return 1
     fi
 
-    log_success "Command Code finished bugfix execution (Model: ${DEFAULT_CMD_MODEL})"
+    log_success "$IMPL_CLI finished bugfix execution (Model: $IMPL_MODEL)"
     return 0
 }
 
 # ══════════════════════════════════════
-# PHASE 0: INITIAL IMPLEMENTATION
+# PHASE 1: INITIAL IMPLEMENTATION
 # ══════════════════════════════════════
 
 execute_initial_plan() {
-    log_phase "Phase 0: Initial Implementation (Command Code)"
+    log_phase "Phase 1: Initial Implementation ($IMPL_CLI)"
 
     if ! python3 scripts/orchestrator.py check-active; then
         log_step "Plan is neither 🔒 LOCKED nor 💻 EXECUTING. Skipping initial implementation."
@@ -798,26 +916,20 @@ execute_initial_plan() {
 
     log_step "Found active implementation plan. Running execution..."
     
-    if $DRY_RUN; then
-        log_dim "[DRY RUN] Would execute: ${IMPLEMENTATION_MODEL} -p \"Execute\" --yolo --max-turns 150"
-        return 0
-    fi
-
-    log_dim "Running: ${IMPLEMENTATION_MODEL} -p \"Execute\" --yolo --max-turns 150"
     local cmd_exit=0
-    $IMPLEMENTATION_MODEL -p "Execute" --yolo --max-turns 150 || cmd_exit=$?
+    run_executor 150 || cmd_exit=$?
 
     if [ "$cmd_exit" -eq 8 ]; then
-        log_warn "Command Code hit max turns limit (150). Implementation is incomplete."
+        log_warn "$IMPL_CLI hit max turns limit (150). Implementation is incomplete."
         log_warn "Exiting to allow resuming. Run ./build_and_test.sh again to continue implementation."
         print_usage
         exit 8
     elif [ "$cmd_exit" -ne 0 ]; then
-        log_error "Command Code exited with code ${cmd_exit}"
+        log_error "$IMPL_CLI exited with code ${cmd_exit}"
         return 1
     fi
 
-    log_success "Command Code finished initial implementation (Model: ${DEFAULT_CMD_MODEL})"
+    log_success "$IMPL_CLI finished initial implementation (Model: $IMPL_MODEL)"
     return 0
 }
 
@@ -854,9 +966,9 @@ main() {
         log_dim "Run ./build_and_test.sh --setup to enable free Opus quota routing"
     fi
 
-    # Phase 0: Initial Implementation (skip if --only-review)
+    # Phase 1: Initial Implementation (skip if --only-review)
     if $ONLY_REVIEW; then
-        log_dim "--only-review: skipping Phase 0 (initial implementation)"
+        log_dim "--only-review: skipping Phase 1 (initial implementation)"
     else
         execute_initial_plan
     fi
@@ -871,7 +983,7 @@ main() {
             echo -e "  ${BOLD}${YELLOW}─── Fix Iteration ${iteration}/${MAX_FIX_ITERATIONS} ───${NC}" >&2
         fi
 
-        # Phase 1: Capture
+        # Phase 2: Capture
         local test_result=0
         capture_changes || test_result=$?
         # test_result: 0 = tests pass, 1 = tests fail, exit = no changes found
@@ -883,13 +995,13 @@ main() {
             exit 0
         fi
 
-        # Phase 2: Estimate
+        # Phase 3: Estimate
         estimate_tokens
 
-        # Phase 3: Route
+        # Phase 4: Route
         route_review
 
-        # Phase 4: Review
+        # Phase 5: Review
         run_review
 
         # Check if review found any bugs
@@ -912,7 +1024,7 @@ main() {
             exit 0
         fi
 
-        # Phase 4b: Inject
+        # Phase 5b: Inject
         inject_bugfix_plan
 
         # --only-review: exit after review, don't execute fix
@@ -921,7 +1033,7 @@ main() {
             exit 0
         fi
 
-        # Phase 5: Execute Fix
+        # Phase 6: Execute Fix
         execute_fix
 
         # Re-run tests to check if fix worked

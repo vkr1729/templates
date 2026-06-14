@@ -49,7 +49,7 @@ echo -e "${CYAN}═════════════════════�
 echo -e "${CYAN}  antigravity-init — Lean AI Orchestration Setup       ${NC}"
 echo -e "${CYAN}═══════════════════════════════════════════════════════${NC}"
 # Define IGNORE_ENTRIES early (used by both update and init)
-IGNORE_ENTRIES=("GEMINI.md" "CLAUDE.md" "AGENTS.md" "implementation_plan.md" "success_criteria.md" "execution_history.md" "SKILLS.md" "antigravity-init.sh" "build_and_test.sh" "REVIEW_PROMPT_TEMPLATE.md" "scripts/orchestrator.py" "IMPL_CHANGES.diff" "TEST_REPORT.md" ".review_output.md" ".review_prompt_hydrated.md" ".extracted_bugfix.md")
+IGNORE_ENTRIES=("GEMINI.md" "CLAUDE.md" "AGENTS.md" "KIMCHI.md" "implementation_plan.md" "success_criteria.md" "execution_history.md" "SKILLS.md" "antigravity-init.sh" "build_and_test.sh" "REVIEW_PROMPT_TEMPLATE.md" "scripts/orchestrator.py" "IMPL_CHANGES.diff" "TEST_REPORT.md" ".review_output.md" ".review_prompt_hydrated.md" ".extracted_bugfix.md")
 
 echo ""
 echo -e "  Project:  ${GREEN}${PROJECT_NAME}${NC}"
@@ -66,7 +66,8 @@ if $UPDATE_MODE; then
     cp "$TEMPLATE_DIR/GEMINI.md" "$PROJECT_DIR/GEMINI.md"
     cp "$TEMPLATE_DIR/CLAUDE.md" "$PROJECT_DIR/CLAUDE.md"
     cp "$TEMPLATE_DIR/AGENTS.md" "$PROJECT_DIR/AGENTS.md"
-    echo "  ✅ GEMINI.md, CLAUDE.md, AGENTS.md"
+    cp "$TEMPLATE_DIR/KIMCHI.md" "$PROJECT_DIR/KIMCHI.md"
+    echo "  ✅ GEMINI.md, CLAUDE.md, AGENTS.md, KIMCHI.md"
 
     # Step 2: Copy automation scripts
     echo -e "${GREEN}[2/4]${NC} Updating automation scripts..."
@@ -79,7 +80,7 @@ if $UPDATE_MODE; then
 
     # Step 3: Add template-version comments (use appropriate comment syntax per file type)
     echo -e "${GREEN}[3/4]${NC} Stamping template version..."
-    for f in GEMINI.md CLAUDE.md AGENTS.md build_and_test.sh REVIEW_PROMPT_TEMPLATE.md scripts/orchestrator.py; do
+    for f in GEMINI.md CLAUDE.md AGENTS.md KIMCHI.md build_and_test.sh REVIEW_PROMPT_TEMPLATE.md scripts/orchestrator.py; do
         if [ -f "$PROJECT_DIR/$f" ]; then
             case "$f" in
                 *.md)   echo -e "\n<!-- template-version: ${TEMPLATE_VERSION} -->" >> "$PROJECT_DIR/$f" ;;
@@ -123,7 +124,7 @@ fi
 
 # ── Validate templates exist ──
 missing=()
-for f in GEMINI.md CLAUDE.md AGENTS.md build_and_test.sh REVIEW_PROMPT_TEMPLATE.md; do
+for f in GEMINI.md CLAUDE.md AGENTS.md KIMCHI.md build_and_test.sh REVIEW_PROMPT_TEMPLATE.md; do
     [ ! -f "$TEMPLATE_DIR/$f" ] && missing+=("$f")
 done
 if [ ${#missing[@]} -gt 0 ]; then
@@ -145,9 +146,11 @@ echo -e "${GREEN}[1/5]${NC} Copying tool rules files..."
 cp "$TEMPLATE_DIR/GEMINI.md" "$PROJECT_DIR/GEMINI.md"
 cp "$TEMPLATE_DIR/CLAUDE.md" "$PROJECT_DIR/CLAUDE.md"
 cp "$TEMPLATE_DIR/AGENTS.md" "$PROJECT_DIR/AGENTS.md"
-echo "  ✅ GEMINI.md   (Executor rules for Gemini 3.5 Flash)"
+cp "$TEMPLATE_DIR/KIMCHI.md" "$PROJECT_DIR/KIMCHI.md"
+echo "  ✅ GEMINI.md   (Executor rules for Gemini)"
 echo "  ✅ CLAUDE.md   (Planner/Reviewer rules for Claude Opus/Sonnet)"
 echo "  ✅ AGENTS.md   (Executor rules for DeepSeek V4 Pro — Command Code)"
+echo "  ✅ KIMCHI.md   (Executor rules for Kimi/MiniMax — Kimchi CLI)"
 
 # ── Step 1b: Copy automation scripts ──
 echo ""
@@ -327,7 +330,8 @@ echo "  Workflow:"
 echo "    1. Start with Claude Opus — it plans, locks, and recommends an executor."
 echo "    2. Run the execution prompt in the recommended model:"
 echo "       • DeepSeek V4 Pro (Command Code) for complex tasks"
-echo "       • Gemini 3.5 Flash (Antigravity) for medium tasks"
+echo "       • Gemini 3.1 Pro (Antigravity) for medium tasks"
+echo "       • Kimi / MiniMax (Kimchi CLI) for massive contexts"
 echo "    3. Switch to Claude Opus/Sonnet to review the execution."
 echo "    4. If bugs found, run the bugfix prompt in the recommended model."
 echo "    5. Manual testing — you control the models from here."
