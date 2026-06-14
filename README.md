@@ -125,9 +125,15 @@ Install required dependencies (`headroom-ai`) and authenticate your accounts:
 ```
 
 ### 3. Your daily workflow
-1. **Plan:** Ask your planning model to map out the task.
-2. **Execute:** Run your execution CLI with the prompt "Execute".
-3. **Verify & Review:** Run `./build_and_test.sh` to run tests and let the AI peer-review the changes.
+
+#### Option A: Fully Automated Loop (Recommended)
+1. **Plan:** Ask your planning model to map out the task and lock it in `implementation_plan.md` (e.g., status set to `🔒 LOCKED`).
+2. **Run the Loop:** Run `./build_and_test.sh`. The script automatically detects the active plan, runs your execution CLI with the "Execute" prompt to build the changes, runs tests, and peer-reviews the diff.
+
+#### Option B: Manual Execution + Automated Review
+1. **Plan:** Ask your planning model to map out the task and lock it in `implementation_plan.md`.
+2. **Execute:** Manually run your execution CLI (e.g. `agy --model "Gemini 3.5 Flash" -p "Execute"`) to implement the changes.
+3. **Review:** Run `./build_and_test.sh --only-review` to skip the initial execution phase, run the tests, and trigger the AI peer-review loop.
 
 ---
 
